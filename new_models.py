@@ -3,6 +3,7 @@ from typing import  Dict, List
 from dataloader import DataLoader
 import random
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 class Weight:
     def __init__(self, column_count: int, cell_count: int, dendrite_count: int, input_dim: int):
@@ -24,17 +25,20 @@ class Weight:
         return self.W > threshold
     
     def get_active_dendrites_and_cells(self, column_idx: int, x, threshold: int = 1):
+
+        # Step1 : calculate activation and activate dendrites
         activations = self.get_connected_synapses()[column_idx, :, :, :] @ x # activations.shape = (cell, dendrite)
         #print(f'act of dend {activations}')
-        active_dendrites = activations >= threshold # active_dendrites.shape = (cell, dendrite)
-
-        for i in range(self.cell_count):
-            if np.sum(active_dendrites[i, :]) > 1:
-                max_idx = np.argmax(activations[i, :])
-                active_dendrites[i, :] = False
-                active_dendrites[i, max_idx] = True
+        #active_dendrites = activations >= threshold # active_dendrites.shape = (cell, dendrite)
         
-        self.active_dendrites[:] = active_dendrites
+        # Step2 : select best dendrite
+        active_dendrites = np.zeros((self.cell_count, self.dendrite_count), dtype=bool)
+        for i in range(self.cell_count):
+            max_idx = np.argmax(activations[i, :])
+            active_dendrites[i, :] = False
+            active_dendrites[i, max_idx] = True
+        
+        self.active_dendrites[column_idx] = active_dendrites
         #print(f'active dendrites: {self.active_dendrites}')
         
         # この一塊は改善の余地あり
@@ -52,7 +56,7 @@ class Weight:
 
         return active_dendrites, winner_cell_coord
 
-    
+
     def update_weights(self, column_idx: int, x, lr = 0.05):
         fc_idx = np.where(self.fired_cells[column_idx, :] == True)[0]
         wd_idx = np.where(self.active_dendrites[column_idx, fc_idx, :] == True)[1]
@@ -123,13 +127,13 @@ class CorticalNeuralNetwork:
 cnn = CorticalNeuralNetwork()
 loader = DataLoader('dataset', 100)
 
-d = [{i: 0} for i in range(10)]
-d = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0}
+#d = [{i: 0} for i in range(10)]
+d = [0 for _ in range(10)]
 dist_of_class_in_cell = [d.copy() for _ in range(32)]
 #print(dist_of_class_in_cell[0])
 #print(dist_of_class_in_cell)
 
-for data, label in tqdm(loader):
+for data, label in tqdm(loader): # data: [vectors, patch_indices], label: int
     vec = data[0]
     #print(f'vec.shape: {vec.shape}')
     act_cell = cnn.train_image(vec)
@@ -147,10 +151,11 @@ avg_wl = np.mean(W_l, axis=3)
 print(avg_wl.shape)
 #print(f'avg_wl: {avg_wl[0,:,:]}')
 
-print(dist_of_class_in_cell[0])
-print(dist_of_class_in_cell[1])
-print(dist_of_class_in_cell[2])
-print(dist_of_class_in_cell[3])
+map = np.array(dist_of_class_in_cell)
+plt.imshow(map)
+plt.colorbar(label='value')
+plt.show()
+
     
 
 
