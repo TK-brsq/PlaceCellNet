@@ -27,7 +27,8 @@ class Weight:
     def get_active_dendrites_and_cells(self, column_idx: int, x, threshold: int = 1):
 
         # Step1 : calculate activation and activate dendrites
-        activations = self.get_connected_synapses()[column_idx, :, :, :] @ x # activations.shape = (cell, dendrite)
+        #activations = self.get_connected_synapses()[column_idx, :, :, :] @ x # activations.shape = (cell, dendrite)
+        activations = self.W[column_idx, :, :, :] @ x # activations.shape = (cell, dendrite)
         #print(f'act of dend {activations}')
         #active_dendrites = activations >= threshold # active_dendrites.shape = (cell, dendrite)
         
@@ -53,21 +54,32 @@ class Weight:
         #print(f'fired cells: {fired_cells}')
         '''
         winner_cell_coord = np.unravel_index(np.argmax(activations), (self.column_count, self.cell_count))
+        self.fired_cells[column_idx, winner_cell_coord[1]] = True
 
         return active_dendrites, winner_cell_coord
 
-
-    def update_weights(self, column_idx: int, x, lr = 0.05):
+    def update_weights(self, column_idx: int, x, sigma: float = 1.0, lr = 0.05):
+        # Step 1 : coordinate of winner cell
         fc_idx = np.where(self.fired_cells[column_idx, :] == True)[0]
         wd_idx = np.where(self.active_dendrites[column_idx, fc_idx, :] == True)[1]
         #print(f'idx: {fc_idx}, {wd_idx}')
 
+        # Step 2 : calculate distance and influence
+        location = np.arange(self.cell_count)
+        distance = abs(location - int(fc_idx))
+        influence = np.exp(-(distance**2) / (2 * (sigma**2)))
+
+        # Step 3 : update weights
+        self.W[column_idx, :, :, :] += lr * influence[:, np.newaxis, np.newaxis] * (x - self.W[column_idx, :, :, :])
+
+
         # winnerセルはinputに近づく
+        '''
         self.W[column_idx, fc_idx, wd_idx, :] += 2 * lr * (x - self.W[column_idx, fc_idx, wd_idx, :])
         # loserセルはinputから遠ざかる
         self.W[column_idx, :, :, :] -= lr * (x - self.W[column_idx, :, :, :])
         self.W[column_idx, :, :, :] = np.clip(self.W[column_idx, :, :, :], 0, 1)
-
+        '''
         return self.W
     
     def fix_weights(self, column_idx, cell_idx, dest, new_weight: float = 0.51):
@@ -103,7 +115,7 @@ class CorticalNeuralNetwork:
         
         self.train_lateral(act_cell_record)
 
-        return act_cell_record[0][1]
+        return act_cell_record[8][1]
     
     def train_lateral(self, act_cells: List[int]):
         for i in range(len(act_cells)):
@@ -125,7 +137,7 @@ class CorticalNeuralNetwork:
 #print(w.W)
 
 cnn = CorticalNeuralNetwork()
-loader = DataLoader('dataset', 100)
+loader = DataLoader('dataset', 30)
 
 #d = [{i: 0} for i in range(10)]
 d = [0 for _ in range(10)]
@@ -139,17 +151,6 @@ for data, label in tqdm(loader): # data: [vectors, patch_indices], label: int
     act_cell = cnn.train_image(vec)
     #print(f'act_cell: {act_cell}, label: {label}')
     dist_of_class_in_cell[act_cell][label] += 1
-    
-
-avg_w = np.mean(cnn.basal_W.get_connected_synapses())
-avg_w_l = np.mean(cnn.lateral_W.get_connected_synapses())
-print(f'avg_w: {avg_w}, avg_w_l: {avg_w_l}')
-
-#print(f'W_lateral: {cnn.lateral_W.W[0, 0, 0, :]}')
-W_l = cnn.lateral_W.W
-avg_wl = np.mean(W_l, axis=3)
-print(avg_wl.shape)
-#print(f'avg_wl: {avg_wl[0,:,:]}')
 
 map = np.array(dist_of_class_in_cell)
 plt.imshow(map)
